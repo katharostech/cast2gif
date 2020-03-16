@@ -1,4 +1,7 @@
-//! The asciinema file parser
+//! The asciinema cast file parser
+//!
+//! This module contains the code that parses the asciinema cast into a set of terminal screen
+//! states.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -56,6 +59,9 @@ struct AsciinemaFrame {
 struct AsciinemaFrameRaw(f32, String, String);
 
 /// An iterator over terminal frames in a asciinema cast file reader
+///
+/// Each item in the iterator represents the state of the screen at that frame in the asciinema
+/// cast.
 pub(crate) struct TerminalFrameIter<R: Read> {
     parser: vt100::Parser,
     lines: std::io::Lines<BufReader<R>>,

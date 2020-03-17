@@ -149,7 +149,7 @@ fn execute_cli() -> anyhow::Result<()> {
     match format {
         OutputFormat::Gif => {
             std::thread::spawn(move || {
-                crate::convert_to_gif_with_progress(&cast_file, &out_file, progress_handler)
+                crate::convert_to_gif_with_progress(cast_file, &out_file, progress_handler)
                     .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");

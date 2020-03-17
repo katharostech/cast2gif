@@ -54,7 +54,7 @@ fn configure_thread_pool() {
 
 fn progress_thread<C: CastProgressHandler>(
     progress_reciever: flume::Receiver<ProgressCmd>,
-    progress_handler: C,
+    mut progress_handler: C,
 ) {
     // Setup initial progress
     let mut progress = CastRenderProgress::default();
@@ -122,9 +122,9 @@ pub fn convert_to_gif_with_progress<R, W, C>(
     update_progress: C,
 ) -> Result<(), Error>
 where
-    R: Read + Send,
+    R: Read + Send + 'static,
     W: Write + Send,
-    C: CastProgressHandler,
+    C: CastProgressHandler + 'static,
 {
     // Configure the rayon thread pool
     configure_thread_pool();
@@ -188,7 +188,7 @@ impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
 
 pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
 where
-    R: Read + Send,
+    R: Read + Send + 'static,
     W: Write + Send,
 {
     convert_to_gif_with_progress(reader, writer, NullProgressHandler)

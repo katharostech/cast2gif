@@ -3,6 +3,9 @@
 //! This module contains the functions that take a terminal frame and create a rendered image
 //! of the terminal at that frame.
 
+use imgref::ImgVec;
+use rgb::{AsPixels, RGBA8};
+
 use crate::types::TerminalFrame;
 
 /// Return hex formatted version of a terminal color
@@ -40,7 +43,13 @@ fn parse_color(color: vt100::Color) -> Option<String> {
     }
 }
 
-pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> svg::Document {
+pub(crate) struct SvgFrame {
+    doc: svg::Document,
+    height: u16,
+    width: u16,
+}
+
+pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> SvgFrame {
     use svg::{
         node::{
             element::{Rectangle, Text},
@@ -147,27 +156,47 @@ pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> svg::Document {
         }
     }
 
-    std::fs::create_dir_all("out-svg.gitignore").expect("TODO");
-    svg::save(format!("out-svg.gitignore/{}.svg", frame.time), &doc).expect("TODO");
+    // std::fs::create_dir_all("out-svg.gitignore").expect("TODO");
+    // svg::save(format!("out-svg.gitignore/{}.svg", frame.time), &doc).expect("TODO");
 
-    doc
+    SvgFrame {
+        doc,
+        width: doc_width,
+        height: doc_height,
+    }
 }
 
-pub(crate) fn render_frame_to_png(frame: &TerminalFrame) -> Vec<u8> {
+pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> (TerminalFrame, ImgVec<RGBA8>) {
     use resvg::prelude::*;
     // Get the SVG render of the frame
-    let svg = render_frame_to_svg(frame);
+    let svg_doc = render_frame_to_svg(&frame);
 
     let opt = resvg::Options::default();
-    let rtree = usvg::Tree::from_str(&svg.to_string(), &opt.usvg).expect("TODO");
+    let rtree = usvg::Tree::from_str(&svg_doc.doc.to_string(), &opt.usvg).expect("TODO");
     let backend = resvg::default_backend();
     let mut img = backend.render_to_image(&rtree, &opt).expect("TODO");
 
-    std::fs::create_dir_all("out-png.gitignore").expect("TODO");
-    img.save_png(&std::path::PathBuf::from(format!(
-        "out-png.gitignore/{}.png",
-        frame.time
-    )));
+    // std::fs::create_dir_all("out-png.gitignore").expect("TODO");
+    // img.save_png(&std::path::PathBuf::from(format!(
+    //     "out-png.gitignore/{}.png",
+    //     frame.time
+    // )));
 
-    vec![]
+    // Collect image
+    let rgba8_pixels = img.make_rgba_vec();
+    let rgba8_pixels: Vec<RGBA8> = rgba8_pixels
+        .as_slice()
+        .as_pixels()
+        .iter()
+        .map(Clone::clone)
+        .collect();
+    (
+        frame,
+        imgref::Img::new(
+            rgba8_pixels,
+            // TODO: avoid using `as`
+            svg_doc.width as usize,
+            svg_doc.height as usize,
+        ),
+    )
 }

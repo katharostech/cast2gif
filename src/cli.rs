@@ -139,8 +139,10 @@ fn execute_cli() -> anyhow::Result<()> {
         "{prefix:12} [{elapsed_precise:.dim}]: {wide_bar:.green/white} {pos:>7}/{len:7} ( {eta_precise:.dim} )";
     let raster_progress =
         multi.add(ProgressBar::new(0).with_style(ProgressStyle::default_bar().template(template)));
+    raster_progress.enable_steady_tick(100);
     let sequence_progress =
         multi.add(ProgressBar::new(0).with_style(ProgressStyle::default_bar().template(template)));
+    sequence_progress.enable_steady_tick(100);
 
     match format {
         OutputFormat::Gif => {
@@ -169,11 +171,13 @@ fn execute_cli() -> anyhow::Result<()> {
                 })
                 .expect("TODO");
             });
+            multi.join_and_clear().expect("TODO");
         }
-        _ => unimplemented!(),
+        _ => log::error!(
+            "File format not implemented yet. Open an issue to tell me you want this \
+                         feature sooner. :)"
+        ),
     }
-
-    multi.join_and_clear().expect("TODO");
 
     Ok(())
 }

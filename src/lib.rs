@@ -17,8 +17,10 @@ pub mod cli;
 pub enum Error {
     #[error("{0}")]
     Generic(String),
-    #[error("{0}")]
+    #[error("Asciinema error: {0}")]
     AsciinemaError(#[from] cast_parser::AsciinemaError),
+    #[error("Gif error: {0}")]
+    GifError(#[from] gifski::Error),
 }
 
 lazy_static! {
@@ -56,6 +58,10 @@ pub struct CastRenderProgress {
     pub sequence_progress: Progress,
 }
 
+// impl gifski::progress::ProgressReporter for CastRenderProgress {
+//     fn
+// }
+
 /// The progress of a job
 pub struct Progress {
     /// The number that represents "done"
@@ -68,7 +74,7 @@ pub struct Progress {
 ///
 /// Provide the asciinema cast file as a reader of the cast file and the image will be output to
 /// the writer.
-pub fn convert_to_gif_with_progress<R, W, C>(
+pub fn convert_to_gif_with_progress<R, W: Send, C>(
     reader: R,
     writer: W,
     mut update_progress: C,
@@ -76,7 +82,7 @@ pub fn convert_to_gif_with_progress<R, W, C>(
 where
     R: Read,
     W: Write,
-    C: FnMut(&CastRenderProgress),
+    C: FnMut(&CastRenderProgress) + Send,
 {
     // Configure the rayon thread pool
     configure_thread_pool();
@@ -97,7 +103,7 @@ where
         // Spawn a thread to render the frame
         let s = sender.clone();
         rayon::spawn(move || {
-            let frame = frame_renderer::render_frame_to_png(&frame);
+            let frame = frame_renderer::render_frame_to_png(frame);
             if let Err(e) = s.send(frame) {
                 log::error!("Could not send frame over channel: {}", e)
             }
@@ -131,21 +137,42 @@ where
         rendered_frames.push(frame);
     }
 
-    for frame in rendered_frames {
-        progress.sequence_progress.progress += 1;
-        update_progress(&progress);
-    }
+    rayon::scope(move |s| {
+        // Create gif encoder
+        let (mut collector, gif_writer) = gifski::new(gifski::Settings {
+            width: None,
+            height: None,
+            quality: 100,
+            once: false,
+            fast: false,
+        })
+        .expect("TODO");
+
+        // Write gif to file as it is being processed
+        s.spawn(|_| {
+            gif_writer
+                .write(writer, &mut gifski::progress::NoProgress {})
+                .expect("TODO");
+        });
+
+        for (i, (frame, img)) in rendered_frames.drain(0..).enumerate() {
+            collector
+                .add_frame_rgba(i, img, frame.time.into())
+                .expect("TODO");
+            progress.sequence_progress.progress += 1;
+            update_progress(&progress);
+        }
+
+        drop(collector);
+    });
 
     Ok(())
 }
 
-pub fn convert_to_gif<R, W>(
-    reader: R,
-    writer: W,
-) -> Result<(), Error>
+pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
 where
     R: Read,
-    W: Write
+    W: Write + Send,
 {
     convert_to_gif_with_progress(reader, writer, |_| ())
 }

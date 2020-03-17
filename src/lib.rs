@@ -6,8 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 
 pub(crate) mod cast_parser;
 pub(crate) mod frame_renderer;
-pub(crate) mod sequencer;
 pub(crate) mod types;
+
+use cast_parser::AsciinemaError;
+use types::*;
 
 #[cfg(feature = "cli")]
 pub mod cli;
@@ -18,7 +20,7 @@ pub enum Error {
     #[error("{0}")]
     Generic(String),
     #[error("Asciinema error: {0}")]
-    AsciinemaError(#[from] cast_parser::AsciinemaError),
+    AsciinemaError(#[from] AsciinemaError),
     #[error("Gif error: {0}")]
     GifError(#[from] gifski::Error),
 }
@@ -50,96 +52,100 @@ fn configure_thread_pool() {
     }
 }
 
-/// The progress of a cast render job
-pub struct CastRenderProgress {
-    /// The progress of the terminal frame rasterization
-    pub raster_progress: Progress,
-    /// The progress of the video sequencing
-    pub sequence_progress: Progress,
+fn progress_thread<C>(progress_reciever: flume::Receiver<ProgressCmd>, mut update_progress: C)
+where
+    C: FnMut(&CastRenderProgress) + Send,
+{
+    // Setup initial progress
+    let mut progress = CastRenderProgress::default();
+
+    // Handle incomming commands
+    for cmd in progress_reciever {
+        match cmd {
+            ProgressCmd::IncrementCount => progress.count += 1,
+            ProgressCmd::IncrementRasterProgress => progress.raster_progress += 1,
+            ProgressCmd::IncrementSequenceProgress => progress.sequence_progress += 1,
+        }
+        update_progress(&progress);
+    }
 }
 
-// impl gifski::progress::ProgressReporter for CastRenderProgress {
-//     fn
-// }
+fn png_raster_thread<Fi>(
+    frames: Fi,
+    progress_sender: flume::Sender<ProgressCmd>,
+    frame_sender: flume::Sender<RgbaFrame>,
+) where
+    Fi: IntoIterator<Item = Result<TerminalFrame, AsciinemaError>>,
+{
+    // For each frame
+    for frame in frames {
+        // Unwrap frame result
+        let frame = frame.expect("TODO");
 
-/// The progress of a job
-pub struct Progress {
-    /// The number that represents "done"
-    pub count: u64,
-    /// The current progress
-    pub progress: u64,
+        // Increment frame count
+        progress_sender
+            .send(ProgressCmd::IncrementCount)
+            .expect("TODO");
+
+        // Spawn a thread to render the frame
+        let fs = frame_sender.clone();
+        let ps = progress_sender.clone();
+        rayon::spawn(move || {
+            let frame = frame_renderer::render_frame_to_png(frame);
+            fs.send(frame).expect("TODO");
+            ps.send(ProgressCmd::IncrementRasterProgress).expect("TODO");
+        });
+    }
+}
+
+fn gif_sequencer_thread(
+    frame_receiver: flume::Receiver<RgbaFrame>,
+    mut gif_collector: gifski::Collector,
+) {
+    // For every frame
+    for frame in frame_receiver {
+        // Add frame to gif
+        gif_collector
+            // TODO: avoid `as`
+            .add_frame_rgba(frame.index as usize, frame.image, frame.time as f64)
+            .expect("TODO");
+    }
 }
 
 /// Convert a asciinema cast file to a gif image
 ///
 /// Provide the asciinema cast file as a reader of the cast file and the image will be output to
 /// the writer.
-pub fn convert_to_gif_with_progress<R, W: Send, C>(
+pub fn convert_to_gif_with_progress<R, W, C>(
     reader: R,
     writer: W,
-    mut update_progress: C,
+    update_progress: C,
 ) -> Result<(), Error>
 where
-    R: Read,
-    W: Write,
+    R: Read + Send,
+    W: Write + Send,
     C: FnMut(&CastRenderProgress) + Send,
 {
     // Configure the rayon thread pool
     configure_thread_pool();
 
-    // Create iterator over terminal frames
-    let term_frames = cast_parser::TerminalFrameIter::new(reader)?;
+    rayon::scope(move |spawner| {
+        // Create the progress thread and channel
+        let (progress_sender, progress_receiver) = flume::unbounded();
+        spawner.spawn(move |_| progress_thread(progress_receiver, update_progress));
 
-    // Create channel for getting rendered frames
-    let (sender, receiver) = crossbeam_channel::unbounded();
+        // Create channel for getting rendered frames
+        let (raster_sender, raster_receiver) = flume::unbounded();
 
-    // For each frame
-    let mut frame_count = 0;
-    for frame in term_frames {
-        // Unwrap frame result
-        let frame = frame?;
-        // Increment frame count
-        frame_count += 1;
-        // Spawn a thread to render the frame
-        let s = sender.clone();
-        rayon::spawn(move || {
-            let frame = frame_renderer::render_frame_to_png(frame);
-            if let Err(e) = s.send(frame) {
-                log::error!("Could not send frame over channel: {}", e)
-            }
-        });
-    }
+        // Create iterator over terminal frames
+        let term_frames = cast_parser::TerminalFrameIter::new(reader).expect("TODO");
 
-    let mut progress = CastRenderProgress {
-        raster_progress: Progress {
-            count: frame_count,
-            progress: 0,
-        },
-        sequence_progress: Progress {
-            count: frame_count,
-            progress: 0,
-        },
-    };
+        // Spawn the png rasterizer thread
+        let ps = progress_sender.clone();
+        spawner.spawn(move |_| png_raster_thread(term_frames, ps, raster_sender));
 
-    update_progress(&progress);
-
-    // Drop the unused sender ( to avoid blocking the receiver )
-    drop(sender);
-
-    // Collect the frame results
-    let mut rendered_frames =
-        Vec::with_capacity(frame_count as usize /* TODO: don't use as */);
-
-    while let Ok(frame) = receiver.recv() {
-        progress.raster_progress.progress += 1;
-        update_progress(&progress);
-
-        rendered_frames.push(frame);
-    }
-
-    rayon::scope(move |s| {
-        // Create gif encoder
-        let (mut collector, gif_writer) = gifski::new(gifski::Settings {
+        // Create gifski gif encoder
+        let (collector, gif_writer) = gifski::new(gifski::Settings {
             width: None,
             height: None,
             quality: 100,
@@ -148,30 +154,43 @@ where
         })
         .expect("TODO");
 
-        // Write gif to file as it is being processed
-        s.spawn(|_| {
-            gif_writer
-                .write(writer, &mut gifski::progress::NoProgress {})
-                .expect("TODO");
-        });
+        // Spawn the gif sequencer thread
+        spawner.spawn(move |_| gif_sequencer_thread(raster_receiver, collector));
 
-        for (i, (frame, img)) in rendered_frames.drain(0..).enumerate() {
-            collector
-                .add_frame_rgba(i, img, frame.time.into())
-                .expect("TODO");
-            progress.sequence_progress.progress += 1;
-            update_progress(&progress);
-        }
-
-        drop(collector);
+        // Write out the recieved gif
+        let buf = std::io::BufWriter::new(writer);
+        let mut progress_handler = GifWriterProgressHandler::new(progress_sender);
+        gif_writer.write(buf, &mut progress_handler).expect("TODO");
     });
 
     Ok(())
 }
 
+struct GifWriterProgressHandler {
+    progress_sender: flume::Sender<ProgressCmd>,
+}
+
+impl GifWriterProgressHandler {
+    fn new(progress_sender: flume::Sender<ProgressCmd>) -> Self {
+        Self { progress_sender }
+    }
+}
+
+impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
+    fn increase(&mut self) -> bool {
+        self.progress_sender
+            .send(ProgressCmd::IncrementSequenceProgress)
+            .expect("TODO");
+
+        true
+    }
+
+    fn done(&mut self, _msg: &str) {}
+}
+
 pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
 where
-    R: Read,
+    R: Read + Send,
     W: Write + Send,
 {
     convert_to_gif_with_progress(reader, writer, |_| ())

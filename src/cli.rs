@@ -150,7 +150,7 @@ fn execute_cli() -> anyhow::Result<()> {
                 crate::convert_to_gif_with_progress(&cast_file, &out_file, |progress| {
                     macro_rules! handle_progress {
                         ($x:expr, $p:expr, $message:expr) => {
-                            $x.set_length($p.count);
+                            $x.set_length(progress.count);
                             if $x.position() > 0 {
                                 $x.set_prefix($message);
                             } else if $x.is_finished() {
@@ -158,7 +158,7 @@ fn execute_cli() -> anyhow::Result<()> {
                             } else {
                                 $x.set_prefix("Waiting")
                             }
-                            $x.set_position($p.progress);
+                            $x.set_position($p);
 
                             if $x.is_finished() {
                                 $x.finish();

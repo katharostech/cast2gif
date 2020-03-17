@@ -63,6 +63,7 @@ struct AsciinemaFrameRaw(f32, String, String);
 /// Each item in the iterator represents the state of the screen at that frame in the asciinema
 /// cast.
 pub(crate) struct TerminalFrameIter<R: Read> {
+    index: u64,
     parser: vt100::Parser,
     lines: std::io::Lines<BufReader<R>>,
 }
@@ -88,6 +89,7 @@ impl<R: Read> TerminalFrameIter<R> {
 
         // Create iterator
         Ok(TerminalFrameIter {
+            index: 0,
             parser: vt100::Parser::new(metadata.height, metadata.width, 0 /* scrollback */),
             lines,
         })
@@ -152,7 +154,10 @@ impl<R: Read> Iterator for TerminalFrameIter<R> {
                 self.parser.process(frame.output.as_bytes());
 
                 // Return the next terminal frame
+                let current_index = self.index;
+                self.index += 1;
                 break Some(Ok(TerminalFrame {
+                    index: current_index,
                     time: frame.time,
                     screen: self.parser.screen().clone(),
                 }));

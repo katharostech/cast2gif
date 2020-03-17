@@ -3,10 +3,9 @@
 //! This module contains the functions that take a terminal frame and create a rendered image
 //! of the terminal at that frame.
 
-use imgref::ImgVec;
 use rgb::{AsPixels, RGBA8};
 
-use crate::types::TerminalFrame;
+use crate::types::*;
 
 /// Return hex formatted version of a terminal color
 ///
@@ -41,12 +40,6 @@ fn parse_color(color: vt100::Color) -> Option<String> {
         },
         Color::Rgb(r, g, b) => Some(format!("#{}", base16::encode_lower(&[r, g, b]))),
     }
-}
-
-pub(crate) struct SvgFrame {
-    doc: svg::Document,
-    height: u16,
-    width: u16,
 }
 
 pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> SvgFrame {
@@ -160,13 +153,15 @@ pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> SvgFrame {
     // svg::save(format!("out-svg.gitignore/{}.svg", frame.time), &doc).expect("TODO");
 
     SvgFrame {
+        index: frame.index,
+        time: frame.time,
         doc,
         width: doc_width,
         height: doc_height,
     }
 }
 
-pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> (TerminalFrame, ImgVec<RGBA8>) {
+pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     use resvg::prelude::*;
     // Get the SVG render of the frame
     let svg_doc = render_frame_to_svg(&frame);
@@ -190,13 +185,15 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> (TerminalFrame, ImgVe
         .iter()
         .map(Clone::clone)
         .collect();
-    (
-        frame,
-        imgref::Img::new(
+
+    RgbaFrame {
+        time: frame.time,
+        index: frame.index,
+        image: imgref::Img::new(
             rgba8_pixels,
             // TODO: avoid using `as`
             svg_doc.width as usize,
             svg_doc.height as usize,
         ),
-    )
+    }
 }

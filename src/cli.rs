@@ -1,4 +1,5 @@
 use anyhow::{format_err, Context};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use std::path::Path;
 
@@ -132,12 +133,47 @@ fn execute_cli() -> anyhow::Result<()> {
         Some(other) => panic!("Invalid option to --format: {}", other),
     };
 
+    // Create the progress bars
+    let multi = MultiProgress::new();
+    let template =
+        "{prefix:12} [{elapsed_precise:.dim}]: {wide_bar:.green/white} {pos:>7}/{len:7} ( {eta_precise:.dim} )";
+    let raster_progress =
+        multi.add(ProgressBar::new(0).with_style(ProgressStyle::default_bar().template(template)));
+    let sequence_progress =
+        multi.add(ProgressBar::new(0).with_style(ProgressStyle::default_bar().template(template)));
+
     match format {
         OutputFormat::Gif => {
-            crate::convert_to_gif(&cast_file, &out_file).context("Could not render cast file")?
+            std::thread::spawn(move || {
+                crate::convert_to_gif_with_progress(&cast_file, &out_file, |progress| {
+                    macro_rules! handle_progress {
+                        ($x:expr, $p:expr, $message:expr) => {
+                            $x.set_length($p.count);
+                            if $x.position() > 0 {
+                                $x.set_prefix($message);
+                            } else if $x.is_finished() {
+                                $x.set_prefix("Done")
+                            } else {
+                                $x.set_prefix("Waiting")
+                            }
+                            $x.set_position($p.progress);
+
+                            if $x.is_finished() {
+                                $x.finish();
+                            }
+                        };
+                    };
+
+                    handle_progress!(raster_progress, progress.raster_progress, "Rasterizing");
+                    handle_progress!(sequence_progress, progress.sequence_progress, "Sequencing");
+                })
+                .expect("TODO");
+            });
         }
         _ => unimplemented!(),
     }
+
+    multi.join_and_clear().expect("TODO");
 
     Ok(())
 }

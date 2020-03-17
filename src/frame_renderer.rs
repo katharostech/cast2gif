@@ -69,7 +69,6 @@ pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> svg::Document {
     // TODO: Allow custom
     let background_color = "#000000";
     let foreground_color = "#ffffff";
-    let font_family = "DejaVu Sans Mono";
 
     // Draw the terminal background
     doc = doc.add(
@@ -135,9 +134,8 @@ pub(crate) fn render_frame_to_svg(frame: &TerminalFrame) -> svg::Document {
                         .set(
                             "style",
                             format!(
-                                "font-style:normal; \
-                                font-weight:normal; \
-                                font-size: {font_size}px; \
+                                "font-size: {font_size}px; \
+                                font-family: monospace; \
                                 fill: {color};",
                                 // font = font_family,
                                 font_size = font_size,

@@ -48,7 +48,36 @@ fn configure_thread_pool() {
     }
 }
 
-pub fn convert_to_gif<R: Read, W: Write>(reader: R, writer: W) -> Result<(), Error> {
+/// The progress of a cast render job
+pub struct CastRenderProgress {
+    /// The progress of the terminal frame rasterization
+    pub raster_progress: Progress,
+    /// The progress of the video sequencing
+    pub sequence_progress: Progress,
+}
+
+/// The progress of a job
+pub struct Progress {
+    /// The number that represents "done"
+    pub count: u64,
+    /// The current progress
+    pub progress: u64,
+}
+
+/// Convert a asciinema cast file to a gif image
+///
+/// Provide the asciinema cast file as a reader of the cast file and the image will be output to
+/// the writer.
+pub fn convert_to_gif_with_progress<R, W, C>(
+    reader: R,
+    writer: W,
+    mut update_progress: C,
+) -> Result<(), Error>
+where
+    R: Read,
+    W: Write,
+    C: FnMut(&CastRenderProgress),
+{
     // Configure the rayon thread pool
     configure_thread_pool();
 
@@ -65,7 +94,6 @@ pub fn convert_to_gif<R: Read, W: Write>(reader: R, writer: W) -> Result<(), Err
         let frame = frame?;
         // Increment frame count
         frame_count += 1;
-        
         // Spawn a thread to render the frame
         let s = sender.clone();
         rayon::spawn(move || {
@@ -74,21 +102,50 @@ pub fn convert_to_gif<R: Read, W: Write>(reader: R, writer: W) -> Result<(), Err
                 log::error!("Could not send frame over channel: {}", e)
             }
         });
-        
-        // Fake
-        // break;
     }
+
+    let mut progress = CastRenderProgress {
+        raster_progress: Progress {
+            count: frame_count,
+            progress: 0,
+        },
+        sequence_progress: Progress {
+            count: frame_count,
+            progress: 0,
+        },
+    };
+
+    update_progress(&progress);
 
     // Drop the unused sender ( to avoid blocking the receiver )
     drop(sender);
 
     // Collect the frame results
-    let mut rendered_frames = Vec::with_capacity(frame_count);
+    let mut rendered_frames =
+        Vec::with_capacity(frame_count as usize /* TODO: don't use as */);
+
     while let Ok(frame) = receiver.recv() {
+        progress.raster_progress.progress += 1;
+        update_progress(&progress);
+
         rendered_frames.push(frame);
     }
 
-    dbg!(rendered_frames);
+    for frame in rendered_frames {
+        progress.sequence_progress.progress += 1;
+        update_progress(&progress);
+    }
 
     Ok(())
+}
+
+pub fn convert_to_gif<R, W>(
+    reader: R,
+    writer: W,
+) -> Result<(), Error>
+where
+    R: Read,
+    W: Write
+{
+    convert_to_gif_with_progress(reader, writer, |_| ())
 }

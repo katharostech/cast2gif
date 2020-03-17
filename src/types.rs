@@ -57,3 +57,14 @@ pub(crate) enum ProgressCmd {
     IncrementRasterProgress,
     IncrementSequenceProgress,
 }
+
+/// The trait for a progress handler
+pub trait CastProgressHandler: Send {
+    fn update_progress(&mut self, progress: &CastRenderProgress);
+}
+
+pub struct NullProgressHandler;
+
+impl CastProgressHandler for NullProgressHandler {
+    fn update_progress(&mut self, _progress: &CastRenderProgress) {}
+}

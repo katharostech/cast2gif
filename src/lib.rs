@@ -9,7 +9,7 @@ pub(crate) mod frame_renderer;
 pub(crate) mod types;
 
 use cast_parser::AsciinemaError;
-use types::*;
+pub use types::*;
 
 #[cfg(feature = "cli")]
 pub mod cli;
@@ -52,10 +52,10 @@ fn configure_thread_pool() {
     }
 }
 
-fn progress_thread<C>(progress_reciever: flume::Receiver<ProgressCmd>, mut update_progress: C)
-where
-    C: FnMut(&CastRenderProgress) + Send,
-{
+fn progress_thread<C: CastProgressHandler>(
+    progress_reciever: flume::Receiver<ProgressCmd>,
+    progress_handler: C,
+) {
     // Setup initial progress
     let mut progress = CastRenderProgress::default();
 
@@ -66,7 +66,7 @@ where
             ProgressCmd::IncrementRasterProgress => progress.raster_progress += 1,
             ProgressCmd::IncrementSequenceProgress => progress.sequence_progress += 1,
         }
-        update_progress(&progress);
+        progress_handler.update_progress(&progress);
     }
 }
 
@@ -124,44 +124,42 @@ pub fn convert_to_gif_with_progress<R, W, C>(
 where
     R: Read + Send,
     W: Write + Send,
-    C: FnMut(&CastRenderProgress) + Send,
+    C: CastProgressHandler,
 {
     // Configure the rayon thread pool
     configure_thread_pool();
 
-    rayon::scope(move |spawner| {
-        // Create the progress thread and channel
-        let (progress_sender, progress_receiver) = flume::unbounded();
-        spawner.spawn(move |_| progress_thread(progress_receiver, update_progress));
+    // Create the progress thread and channel
+    let (progress_sender, progress_receiver) = flume::unbounded();
+    rayon::spawn(move || progress_thread(progress_receiver, update_progress));
 
-        // Create channel for getting rendered frames
-        let (raster_sender, raster_receiver) = flume::unbounded();
+    // Create channel for getting rendered frames
+    let (raster_sender, raster_receiver) = flume::unbounded();
 
-        // Create iterator over terminal frames
-        let term_frames = cast_parser::TerminalFrameIter::new(reader).expect("TODO");
+    // Create iterator over terminal frames
+    let term_frames = cast_parser::TerminalFrameIter::new(reader).expect("TODO");
 
-        // Spawn the png rasterizer thread
-        let ps = progress_sender.clone();
-        spawner.spawn(move |_| png_raster_thread(term_frames, ps, raster_sender));
+    // Spawn the png rasterizer thread
+    let ps = progress_sender.clone();
+    rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender));
 
-        // Create gifski gif encoder
-        let (collector, gif_writer) = gifski::new(gifski::Settings {
-            width: None,
-            height: None,
-            quality: 100,
-            once: false,
-            fast: false,
-        })
-        .expect("TODO");
+    // Create gifski gif encoder
+    let (collector, gif_writer) = gifski::new(gifski::Settings {
+        width: None,
+        height: None,
+        quality: 100,
+        once: false,
+        fast: false,
+    })
+    .expect("TODO");
 
-        // Spawn the gif sequencer thread
-        spawner.spawn(move |_| gif_sequencer_thread(raster_receiver, collector));
+    // Spawn the gif sequencer thread
+    rayon::spawn(move || gif_sequencer_thread(raster_receiver, collector));
 
-        // Write out the recieved gif
-        let buf = std::io::BufWriter::new(writer);
-        let mut progress_handler = GifWriterProgressHandler::new(progress_sender);
-        gif_writer.write(buf, &mut progress_handler).expect("TODO");
-    });
+    // Write out the recieved gif
+    let buf = std::io::BufWriter::new(writer);
+    let mut progress_handler = GifWriterProgressHandler::new(progress_sender);
+    gif_writer.write(buf, &mut progress_handler).expect("TODO");
 
     Ok(())
 }
@@ -193,5 +191,5 @@ where
     R: Read + Send,
     W: Write + Send,
 {
-    convert_to_gif_with_progress(reader, writer, |_| ())
+    convert_to_gif_with_progress(reader, writer, NullProgressHandler)
 }

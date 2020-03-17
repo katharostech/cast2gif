@@ -144,32 +144,13 @@ fn execute_cli() -> anyhow::Result<()> {
         multi.add(ProgressBar::new(0).with_style(ProgressStyle::default_bar().template(template)));
     sequence_progress.enable_steady_tick(100);
 
+    let progress_handler = ProgressHandler::new(raster_progress, sequence_progress);
+
     match format {
         OutputFormat::Gif => {
             std::thread::spawn(move || {
-                crate::convert_to_gif_with_progress(&cast_file, &out_file, |progress| {
-                    macro_rules! handle_progress {
-                        ($x:expr, $p:expr, $message:expr) => {
-                            $x.set_length(progress.count);
-                            if $x.position() > 0 {
-                                $x.set_prefix($message);
-                            } else if $x.is_finished() {
-                                $x.set_prefix("Done")
-                            } else {
-                                $x.set_prefix("Waiting")
-                            }
-                            $x.set_position($p);
-
-                            if $x.is_finished() {
-                                $x.finish();
-                            }
-                        };
-                    };
-
-                    handle_progress!(raster_progress, progress.raster_progress, "Rasterizing");
-                    handle_progress!(sequence_progress, progress.sequence_progress, "Sequencing");
-                })
-                .expect("TODO");
+                crate::convert_to_gif_with_progress(&cast_file, &out_file, progress_handler)
+                    .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");
         }
@@ -180,4 +161,51 @@ fn execute_cli() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+struct ProgressHandler {
+    raster_progress: ProgressBar,
+    sequence_progress: ProgressBar,
+}
+
+impl ProgressHandler {
+    fn new(raster_progress: ProgressBar, sequence_progress: ProgressBar) -> Self {
+        Self {
+            raster_progress,
+            sequence_progress,
+        }
+    }
+}
+
+impl crate::types::CastProgressHandler for ProgressHandler {
+    fn update_progress(&mut self, progress: &crate::CastRenderProgress) {
+        macro_rules! handle_progress {
+            ($x:expr, $p:expr, $message:expr) => {
+                $x.set_length(progress.count);
+                if $x.position() > 0 {
+                    $x.set_prefix($message);
+                } else if $x.is_finished() {
+                    $x.set_prefix("Done")
+                } else {
+                    $x.set_prefix("Waiting")
+                }
+                $x.set_position($p);
+
+                if $x.is_finished() {
+                    $x.finish();
+                }
+            };
+        };
+
+        handle_progress!(
+            self.raster_progress,
+            progress.raster_progress,
+            "Rasterizing"
+        );
+        handle_progress!(
+            self.sequence_progress,
+            progress.sequence_progress,
+            "Sequencing"
+        );
+    }
 }

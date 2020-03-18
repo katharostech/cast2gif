@@ -102,12 +102,23 @@ fn gif_sequencer_thread(
     frame_receiver: flume::Receiver<RgbaFrame>,
     mut gif_collector: gifski::Collector,
 ) {
-    // For every frame
+    let mut log = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open("log.gitignore.txt")
+        .expect("TODO");
+
     for frame in frame_receiver {
+        writeln!(log, "frame: {:#?}", frame).expect("TODO");
         // Add frame to gif
         gif_collector
             // TODO: avoid `as`
-            .add_frame_rgba(frame.index as usize, frame.image, frame.time as f64)
+            .add_frame_rgba(
+                frame.index as usize,
+                frame.image,
+                (frame.time * 0.01) as f64,
+            )
             .expect("TODO");
     }
 }
@@ -119,6 +130,7 @@ fn gif_sequencer_thread(
 pub fn convert_to_gif_with_progress<R, W, C>(
     reader: R,
     writer: W,
+    interval: f32,
     update_progress: C,
 ) -> Result<(), Error>
 where
@@ -137,7 +149,7 @@ where
     let (raster_sender, raster_receiver) = flume::unbounded();
 
     // Create iterator over terminal frames
-    let term_frames = cast_parser::TerminalFrameIter::new(reader).expect("TODO");
+    let term_frames = cast_parser::TerminalFrameIter::new(reader, interval).expect("TODO");
 
     // Spawn the png rasterizer thread
     let ps = progress_sender.clone();
@@ -186,10 +198,10 @@ impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
     fn done(&mut self, _msg: &str) {}
 }
 
-pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
+pub fn convert_to_gif<R, W>(reader: R, writer: W, interval: f32) -> Result<(), Error>
 where
     R: Read + Send + 'static,
     W: Write + Send,
 {
-    convert_to_gif_with_progress(reader, writer, NullProgressHandler)
+    convert_to_gif_with_progress(reader, writer, interval, NullProgressHandler)
 }

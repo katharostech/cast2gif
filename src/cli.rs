@@ -69,7 +69,18 @@ fn execute_cli() -> anyhow::Result<()> {
             .long("force")
             .short("f")
             .help("Overwrite existing output file"))
+        .arg(Arg::with_name("frame_interval")
+            .long("frame-interval")
+            .short("i")
+            .help("The interval at which frames from the recording are rendered")
+            .default_value("0.1"))
         .get_matches();
+
+    let interval: f32 = args
+        .value_of("frame_interval")
+        .expect("Missing required arg: frame-interval")
+        .parse()
+        .context("Could not parse frame interval")?;
 
     // Load cast file
     let cast_file_path = args
@@ -149,8 +160,13 @@ fn execute_cli() -> anyhow::Result<()> {
     match format {
         OutputFormat::Gif => {
             std::thread::spawn(move || {
-                crate::convert_to_gif_with_progress(cast_file, &out_file, progress_handler)
-                    .expect("TODO");
+                crate::convert_to_gif_with_progress(
+                    cast_file,
+                    &out_file,
+                    interval,
+                    progress_handler,
+                )
+                .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");
         }

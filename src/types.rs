@@ -1,8 +1,10 @@
 use imgref::ImgVec;
 use rgb::RGBA8;
 
+use std::fmt;
+
 /// A terminal frame
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct TerminalFrame {
     /// The index of the frame in the animation
     pub index: u64,
@@ -12,8 +14,18 @@ pub(crate) struct TerminalFrame {
     pub screen: vt100::Screen,
 }
 
+impl fmt::Debug for TerminalFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Frame")
+            .field("index", &self.index)
+            .field("time", &self.time)
+            .field("screen", &"...")
+            .finish()
+    }
+}
+
 /// An SVG render of a terminal frame
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct SvgFrame {
     /// The index of the frame in the animation
     pub index: u64,
@@ -27,8 +39,20 @@ pub(crate) struct SvgFrame {
     pub width: u16,
 }
 
+impl fmt::Debug for SvgFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Frame")
+            .field("index", &self.index)
+            .field("time", &self.time)
+            .field("doc", &"...")
+            .field("height", &self.height)
+            .field("width", &self.width)
+            .finish()
+    }
+}
+
 /// An SVG render of a terminal frame
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct RgbaFrame {
     /// The index of the frame in the animation
     pub index: u64,
@@ -36,6 +60,16 @@ pub(crate) struct RgbaFrame {
     pub time: f32,
     /// The RGBA image for the frame
     pub image: ImgVec<RGBA8>,
+}
+
+impl fmt::Debug for RgbaFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Frame")
+            .field("index", &self.index)
+            .field("time", &self.time)
+            .field("image", &"...")
+            .finish()
+    }
 }
 
 /// The progress of a cast render job

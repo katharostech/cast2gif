@@ -102,15 +102,7 @@ fn gif_sequencer_thread(
     frame_receiver: flume::Receiver<RgbaFrame>,
     mut gif_collector: gifski::Collector,
 ) {
-    let mut log = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open("log.gitignore.txt")
-        .expect("TODO");
-
     for frame in frame_receiver {
-        writeln!(log, "frame: {:#?}", frame).expect("TODO");
         // Add frame to gif
         gif_collector
             // TODO: avoid `as`
@@ -166,6 +158,12 @@ where
     .expect("TODO");
 
     // Spawn the gif sequencer thread
+    // NOTE: Even though we are handing the rasterized images to the gif collector
+    // in a separate thread, the gif *writer* seems to write sequentially. Also because
+    // Our frame index doesn't start at zero ( kind of a bug? ) it waits until all of the
+    // frames have been set before sequencing. In practice this is not actually an issue
+    // because we pretty much saturate the CPU while rasterizing anyway and it isn't faster
+    // to try to sequence at the same time anyway.
     rayon::spawn(move || gif_sequencer_thread(raster_receiver, collector));
 
     // Write out the recieved gif

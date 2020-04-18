@@ -169,6 +169,9 @@ fn execute_cli() -> anyhow::Result<()> {
                 .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");
+
+            #[cfg(feature = "flamegraph")]
+            flame::dump_html(&mut std::fs::file::File::create("flamegraph.html").unwrap()).unwrap();
         }
         _ => log::error!(
             "File format not implemented yet. Open an issue to tell me you want this \

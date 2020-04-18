@@ -7,13 +7,16 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["cli"]
+default = ["cli", "backend-fontkit"]
 cli = ["anyhow", "better-panic", "clap", "colored", "indicatif", "env_logger"]
+backend-fontkit = ["font-kit", "pathfinder_geometry", "palette"]
+backend-svg = ["resvg"]
+flamegraph = ["flame"]
 
 [dependencies]
 log = "0.4.0"
 vt100 = "0.8.1"
-resvg = { version = "0.9.0", features = ["raqote-backend"] }
+resvg = { version = "0.9.0", features = ["raqote-backend"], optional = true }
 svg = "0.7.1"
 gifski = "0.10.0"
 clap = { version = "2.33.0", features = ["wrap_help"], optional = true }
@@ -32,3 +35,7 @@ indicatif = { version = "0.14.0", optional = true }
 imgref = "1.4.0"
 rgb = "0.8.16"
 flume = "0.5.1"
+font-kit = { version = "0.6", optional = true }
+pathfinder_geometry = { version = "0.5.1", optional = true }
+palette = { version = "0.5.0", optional = true }
+flame = { version = "0.2.2", optional = true }

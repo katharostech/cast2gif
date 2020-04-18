@@ -117,7 +117,7 @@ impl<R: Read> Iterator for TerminalFrameIter<R> {
         if let Some(next_frame) = self.next_frames.pop() {
             // Increment next index
             self.next_index += 1;
-            
+
             // Return that frame instead
             return Some(Ok(next_frame));
         }

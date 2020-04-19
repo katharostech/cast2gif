@@ -86,7 +86,7 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     for row in 0..rows {
         for col in 0..cols {
             let cell = frame.screen.cell(row, col).expect("Error indexing cell");
-            let ypos = row as i32 * font_height + font_height;
+            let ypos = row as i32 * font_height + raster_rect.height() / 2;
             let xpos = col as i32 * font_width;
 
             if cell.has_contents() {

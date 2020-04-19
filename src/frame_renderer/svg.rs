@@ -3,7 +3,10 @@ use rgb::{AsPixels, RGBA8};
 
 use crate::types::*;
 
-use super::parse_color;
+fn parse_color(color: vt100::Color) -> Option<String> {
+    let (r, g, b) = super::parse_color(color)?;
+    Some(format!("#{}", base16::encode_lower(&[r, g, b])))
+}
 
 fn render_frame_to_svg(frame: &TerminalFrame) -> SvgFrame {
     use svg::{

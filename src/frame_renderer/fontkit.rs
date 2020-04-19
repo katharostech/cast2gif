@@ -4,7 +4,7 @@ use font_kit::{
     canvas::{Canvas, Format, RasterizationOptions},
     hinting::HintingOptions,
     loaders::freetype::Font,
-    metrics::Metrics
+    metrics::Metrics,
 };
 use imgref::{Img, ImgVec};
 use lazy_static::lazy_static;
@@ -21,13 +21,11 @@ use super::parse_color;
 use crate::types::*;
 
 lazy_static! {
-    static ref FONT_DATA: Arc<Vec<u8>> = Arc::new(
-        Vec::from_iter(
-            include_bytes!("./fontkit/Hack-Regular.ttf")
+    static ref FONT_DATA: Arc<Vec<u8>> = Arc::new(Vec::from_iter(
+        include_bytes!("./fontkit/Hack-Regular.ttf")
             .iter()
             .map(Clone::clone)
-        )
-    );
+    ));
     static ref FONT_METRICS: Metrics = FONT.with(|f| f.metrics());
 }
 
@@ -66,7 +64,10 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
         })
         .expect("TODO");
     let font_width = raster_rect.width();
-    let font_height = ((FONT_METRICS.ascent - FONT_METRICS.descent) / FONT_METRICS.units_per_em as f32 * font_size).ceil() as i32;
+    let font_height = ((FONT_METRICS.ascent - FONT_METRICS.descent)
+        / FONT_METRICS.units_per_em as f32
+        * font_size)
+        .ceil() as i32;
     let height = (rows as i32 * font_height) as usize;
     let width = (cols as i32 * font_width) as usize;
 
@@ -123,9 +124,11 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     }
     flame!(end "Create Image");
 
-    
     #[cfg(feature = "flamegraph")]
-    flame::dump_html(&mut std::fs::File::create("fontkitrender-flamegraph.gitignore.html").unwrap()).unwrap();
+    flame::dump_html(
+        &mut std::fs::File::create("fontkitrender-flamegraph.gitignore.html").unwrap(),
+    )
+    .unwrap();
 
     RgbaFrame {
         time: frame.time,

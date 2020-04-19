@@ -45,6 +45,7 @@ enum OutputFormat {
 
 fn execute_cli() -> anyhow::Result<()> {
     use clap::{crate_authors, crate_version, App, AppSettings, Arg};
+
     #[rustfmt::skip]
     let args = App::new("cast2gif")
         .version(crate_version!())
@@ -169,9 +170,6 @@ fn execute_cli() -> anyhow::Result<()> {
                 .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");
-
-            #[cfg(feature = "flamegraph")]
-            flame::dump_html(&mut std::fs::file::File::create("flamegraph.html").unwrap()).unwrap();
         }
         _ => log::error!(
             "File format not implemented yet. Open an issue to tell me you want this \

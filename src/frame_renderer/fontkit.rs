@@ -4,6 +4,7 @@ use font_kit::{
     canvas::{Canvas, Format, RasterizationOptions},
     hinting::HintingOptions,
     loaders::freetype::Font,
+    metrics::Metrics
 };
 use imgref::{Img, ImgVec};
 use lazy_static::lazy_static;
@@ -19,28 +20,38 @@ use std::sync::Arc;
 use super::parse_color;
 use crate::types::*;
 
+lazy_static! {
+    static ref FONT_DATA: Arc<Vec<u8>> = Arc::new(
+        Vec::from_iter(
+            include_bytes!("./fontkit/Hack-Regular.ttf")
+            .iter()
+            .map(Clone::clone)
+        )
+    );
+    static ref FONT_METRICS: Metrics = FONT.with(|f| f.metrics());
+}
+
 thread_local! {
     // TODO clone the arc instead of cloning the iterator every time
-    static FONT: Font = Font::from_bytes(
-        Arc::new(
-            Vec::from_iter(
-                include_bytes!("./fontkit/Hack-Regular.ttf")
-                .iter()
-                .map(Clone::clone)
-            )
-        ), 0).expect("Could not load font");
+    static FONT: Font = Font::from_bytes(FONT_DATA.clone(), 0).expect("Could not load font");
 }
 
 pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
-    let font_size = 18f32; // TODO make configurable font size
+    flame!(guard "Render Frame To PNG");
+
+    flame!(start "Init Values");
+    let font_size = 13f32; // TODO make configurable font size
     let (rows, cols) = frame.screen.size();
     let background_color: RGBA8 = RGBA::new(0, 0, 0, 255);
 
     // Glyph rendering config
-    let transform = Transform2F::default();
-    let hinting_options = HintingOptions::Full(2.);
-    let format = Format::A8;
-    let rasterization_options = RasterizationOptions::GrayscaleAa;
+    lazy_static! {
+        static ref TRANS: Transform2F = Transform2F::default();
+        // TODO check hinting settings ( None might be faster with no difference in rendering )
+        static ref HINTING_OPTS: HintingOptions = HintingOptions::Vertical(5.);
+        static ref FORMAT: Format = Format::A8;
+        static ref RASTER_OPTS: RasterizationOptions = RasterizationOptions::GrayscaleAa;
+    }
 
     // Get font height and width
     let raster_rect = FONT
@@ -48,14 +59,14 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
             f.raster_bounds(
                 f.glyph_for_char('A').expect("TODO"),
                 font_size,
-                transform,
-                hinting_options,
-                rasterization_options,
+                *TRANS,
+                *HINTING_OPTS,
+                *RASTER_OPTS,
             )
         })
         .expect("TODO");
-    let font_height = raster_rect.height();
     let font_width = raster_rect.width();
+    let font_height = ((FONT_METRICS.ascent - FONT_METRICS.descent) / FONT_METRICS.units_per_em as f32 * font_size).ceil() as i32;
     let height = (rows as i32 * font_height) as usize;
     let width = (cols as i32 * font_width) as usize;
 
@@ -66,9 +77,12 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
         pixels.push(background_color);
     }
     let mut image: ImgVec<RGBA8> = Img::new(pixels, width, height);
-    let mut canvas = Canvas::new(Vector2I::new(width as _, height as _), format);
+    let mut canvas = Canvas::new(Vector2I::new(width as _, height as _), *FORMAT);
     let _cursor_position = frame.screen.cursor_position();
 
+    flame!(end "Init Values");
+
+    flame!(start "Render Cells");
     for row in 0..rows {
         for col in 0..cols {
             let cell = frame.screen.cell(row, col).expect("Error indexing cell");
@@ -86,18 +100,20 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
                         &mut canvas,
                         glyph_id,
                         font_size as f32,
-                        Transform2F::from_translation(Vector2F::new(xpos as f32, ypos as f32))
-                            * transform,
-                        hinting_options,
-                        rasterization_options,
+                        Transform2F::from_translation(Vector2F::new(xpos as f32, ypos as f32)),
+                        *HINTING_OPTS,
+                        *RASTER_OPTS,
                     )
                 })
                 .expect("TODO");
             }
         }
     }
+    flame!(end "Render Cells");
 
+    flame!(start "Create Image");
     for y in 0..height {
+        // flame!(guard "Write Pixel");
         let (row_start, row_end) = (y as usize * canvas.stride, (y + 1) as usize * canvas.stride);
         let row = &canvas.pixels[row_start..row_end];
         for x in 0..width {
@@ -105,6 +121,11 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
             image[(x, y)] = RGBA8::new(a, a, a, 255);
         }
     }
+    flame!(end "Create Image");
+
+    
+    #[cfg(feature = "flamegraph")]
+    flame::dump_html(&mut std::fs::File::create("fontkitrender-flamegraph.gitignore.html").unwrap()).unwrap();
 
     RgbaFrame {
         time: frame.time,

@@ -4,6 +4,8 @@ use thiserror::Error;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 
+#[macro_use]
+pub(crate) mod macros;
 pub(crate) mod cast_parser;
 pub(crate) mod frame_renderer;
 pub(crate) mod types;

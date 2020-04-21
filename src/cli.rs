@@ -39,8 +39,9 @@ pub fn run() {
 
 enum OutputFormat {
     Gif,
-    Png,
-    Svg,
+    // TODO: Other image formats
+    // Png,
+    // Svg,
 }
 
 fn execute_cli() -> anyhow::Result<()> {
@@ -59,29 +60,19 @@ fn execute_cli() -> anyhow::Result<()> {
         .arg(Arg::with_name("out_file")
             .help("The file to render to")
             .required(true))
-        .arg(Arg::with_name("format")
-            .long("format")
-            .short("F")
-            .help("The file format to render to. This will be automatically determined from the \
-                   file extension if not specified.")
-            .takes_value(true)
-            .possible_values(&["gif", "svg", "png"]))
+        // TODO: Implement other file formats
+        // .arg(Arg::with_name("format")
+        //     .long("format")
+        //     .short("F")
+        //     .help("The file format to render to. This will be automatically determined from the \
+        //            file extension if not specified.")
+        //     .takes_value(true)
+        //     .possible_values(&["gif", "svg", "png"]))
         .arg(Arg::with_name("force")
             .long("force")
             .short("f")
             .help("Overwrite existing output file"))
-        .arg(Arg::with_name("frame_interval")
-            .long("frame-interval")
-            .short("i")
-            .help("The interval at which frames from the recording are rendered")
-            .default_value("0.1"))
         .get_matches();
-
-    let interval: f32 = args
-        .value_of("frame_interval")
-        .expect("Missing required arg: frame-interval")
-        .parse()
-        .context("Could not parse frame interval")?;
 
     // Load cast file
     let cast_file_path = args
@@ -117,33 +108,35 @@ fn execute_cli() -> anyhow::Result<()> {
             out_file_path.to_string_lossy()
         ))?;
 
-    let format = match args.value_of("format") {
-        // Guess format from file extension
-        None => {
-            let warn_message = "Could not detect output format from file extension, assuming gif \
-                                format. Use --format to specify otherwise.";
-            if let Some(ext) = out_file_path.extension() {
-                let ext = ext.to_string_lossy().to_lowercase();
-                match ext.as_str() {
-                    "gif" => OutputFormat::Gif,
-                    "svg" => OutputFormat::Svg,
-                    "png" => OutputFormat::Png,
-                    _ => {
-                        log::warn!("{}", warn_message);
-                        OutputFormat::Gif
-                    }
-                }
-            } else {
-                log::warn!("{}", warn_message);
-                OutputFormat::Gif
-            }
-        }
-        // Use seleted output format
-        Some("gif") => OutputFormat::Gif,
-        Some("svg") => OutputFormat::Svg,
-        Some("png") => OutputFormat::Png,
-        Some(other) => panic!("Invalid option to --format: {}", other),
-    };
+    // TODO: Other image formats
+    let format = OutputFormat::Gif;
+    // let format = match args.value_of("format") {
+    //     // Guess format from file extension
+    //     None => {
+    //         let warn_message = "Could not detect output format from file extension, assuming gif \
+    //                             format. Use --format to specify otherwise.";
+    //         if let Some(ext) = out_file_path.extension() {
+    //             let ext = ext.to_string_lossy().to_lowercase();
+    //             match ext.as_str() {
+    //                 "gif" => OutputFormat::Gif,
+    //                 "svg" => OutputFormat::Svg,
+    //                 "png" => OutputFormat::Png,
+    //                 _ => {
+    //                     log::warn!("{}", warn_message);
+    //                     OutputFormat::Gif
+    //                 }
+    //             }
+    //         } else {
+    //             log::warn!("{}", warn_message);
+    //             OutputFormat::Gif
+    //         }
+    //     }
+    //     // Use seleted output format
+    //     Some("gif") => OutputFormat::Gif,
+    //     Some("svg") => OutputFormat::Svg,
+    //     Some("png") => OutputFormat::Png,
+    //     Some(other) => panic!("Invalid option to --format: {}", other),
+    // };
 
     // Create the progress bars
     let multi = MultiProgress::new();
@@ -164,17 +157,17 @@ fn execute_cli() -> anyhow::Result<()> {
                 crate::convert_to_gif_with_progress(
                     cast_file,
                     &out_file,
-                    interval,
                     progress_handler,
                 )
                 .expect("TODO");
             });
             multi.join_and_clear().expect("TODO");
         }
-        _ => log::error!(
-            "File format not implemented yet. Open an issue to tell me you want this \
-                         feature sooner. :)"
-        ),
+        // TODO: Other image formats
+        // _ => log::error!(
+        //     "File format not implemented yet. Open an issue to tell me you want this \
+        //                  feature sooner. :)"
+        // ),
     }
 
     Ok(())

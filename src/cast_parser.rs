@@ -65,13 +65,6 @@ struct AsciinemaFrameRaw(f32, String, String);
 pub(crate) struct TerminalFrameIter<R: Read> {
     /// The index
     next_index: u64,
-    /// The interval between frames
-    interval: f32,
-    /// The time stamp of the last frame
-    last_frame_time: f32,
-    /// If we have determined that we need to render some extra frames, we need to serve these
-    /// first instead of the true next frame in the animation.
-    next_frames: Vec<TerminalFrame>,
     /// The parser instance used to emulate the terminal
     parser: vt100::Parser,
     /// The buffered line reader over the Asciinema recording file
@@ -79,7 +72,7 @@ pub(crate) struct TerminalFrameIter<R: Read> {
 }
 
 impl<R: Read> TerminalFrameIter<R> {
-    pub fn new(reader: R, interval: f32) -> Result<Self, AsciinemaError> {
+    pub fn new(reader: R) -> Result<Self, AsciinemaError> {
         // Buffer read
         let buf_reader = BufReader::new(reader);
         // Split file by lines
@@ -100,10 +93,7 @@ impl<R: Read> TerminalFrameIter<R> {
         // Create iterator
         Ok(TerminalFrameIter {
             next_index: 0,
-            last_frame_time: 0.0,
-            interval,
             parser: vt100::Parser::new(metadata.height, metadata.width, 0 /* scrollback */),
-            next_frames: vec![],
             lines,
         })
     }
@@ -113,15 +103,6 @@ impl<R: Read> Iterator for TerminalFrameIter<R> {
     type Item = Result<TerminalFrame, AsciinemaError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // // If there is a next frame already cached
-        // if let Some(next_frame) = self.next_frames.pop() {
-        //     // Increment next index
-        //     self.next_index += 1;
-
-        //     // Return that frame instead
-        //     return Some(Ok(next_frame));
-        // }
-
         loop {
             // Get the next line from our reader
             let line = self.lines.next();
@@ -175,50 +156,7 @@ impl<R: Read> Iterator for TerminalFrameIter<R> {
                 // Process the terminal input
                 self.parser.process(frame.output.as_bytes());
 
-                // // Get the current frame index and increment the next frame index
-                // let current_index = self.next_index;
-                // self.next_index += 1;
-                // // Get the diff between the frames time and the last frame time
-                // let frame_time_diff = frame.time - self.last_frame_time;
-
-                // If the difference between this frame and the last frame is greater than the
-                // interval
-                // if frame_time_diff >= self.interval {
-                //     // Keep this frame and set this as the last frame time
-                //     self.last_frame_time = frame.time;
-
-                //     let mut filler_frame = None;
-                //     // For every interval's time that this frame time is greater than the last frame
-                //     // we need to add a filler duplicate frame, to keep the frame rate consistent.
-                //     for i in 0..((frame_time_diff / self.interval).floor() as i32) {
-                //         // The first frame we store so that we can render that next
-                //         if i == 0 {
-                //             filler_frame = Some(TerminalFrame {
-                //                 index: current_index,
-                //                 time: frame.time,
-                //                 screen: self.parser.screen().clone(),
-                //             });
-                //         // For the other filler frames, we add them to the upcomming frame list
-                //         } else {
-                //             self.next_index += 1;
-                //             self.next_frames.push(TerminalFrame {
-                //                 index: current_index + i as u64,
-                //                 time: frame.time + i as f32 * self.interval,
-                //                 screen: self.parser.screen().clone(),
-                //             });
-                //         }
-                //     }
-
-                //     // If there is a filler frame, render that one instead
-                //     if let Some(filler_frame) = filler_frame {
-                //         break Some(Ok(filler_frame));
-                //     }
-
-                // // If it has not been greater than the interval
-                // } else {
-                //     // Discard this frame and grab the next one
-                //     continue;
-                // }
+                // Increment the frame index
                 let current_index = self.next_index;
                 self.next_index += 1;
 

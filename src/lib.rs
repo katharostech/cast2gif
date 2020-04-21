@@ -124,7 +124,6 @@ fn gif_sequencer_thread(
 pub fn convert_to_gif_with_progress<R, W, C>(
     reader: R,
     writer: W,
-    interval: f32,
     update_progress: C,
 ) -> Result<(), Error>
 where
@@ -143,7 +142,7 @@ where
     let (raster_sender, raster_receiver) = flume::unbounded();
 
     // Create iterator over terminal frames
-    let term_frames = cast_parser::TerminalFrameIter::new(reader, interval).expect("TODO");
+    let term_frames = cast_parser::TerminalFrameIter::new(reader).expect("TODO");
 
     // Spawn the png rasterizer thread
     let ps = progress_sender.clone();
@@ -198,10 +197,10 @@ impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
     fn done(&mut self, _msg: &str) {}
 }
 
-pub fn convert_to_gif<R, W>(reader: R, writer: W, interval: f32) -> Result<(), Error>
+pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
 where
     R: Read + Send + 'static,
     W: Write + Send,
 {
-    convert_to_gif_with_progress(reader, writer, interval, NullProgressHandler)
+    convert_to_gif_with_progress(reader, writer, NullProgressHandler)
 }

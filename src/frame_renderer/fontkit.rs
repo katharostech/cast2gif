@@ -101,7 +101,7 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
             );
 
             // Fill background color
-            let mut background_color;
+            let background_color;
             if let Some((r, g, b)) = parse_color(cell.bgcolor()) {
                 background_color = RGBA8::new(r, g, b, 255);
                 for pixel in subimg.pixels_mut() {

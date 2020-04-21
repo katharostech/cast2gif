@@ -70,8 +70,9 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
         * font_size)
         .ceil() as i32;
     let font_height_offset = (font_height - raster_rect.height()) / 2;
-    let font_transform = Transform2F::from_translation(Vector2F::new(0., -font_height_offset as f32));
-    
+    let font_transform =
+        Transform2F::from_translation(Vector2F::new(0., -font_height_offset as f32));
+
     let height = (rows as i32 * font_height) as usize;
     let width = (cols as i32 * font_width) as usize;
 
@@ -112,19 +113,24 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
             }
 
             if cell.has_contents() {
-                use palette::{Blend, Pixel, LinSrgba};
+                use palette::{Blend, LinSrgba, Pixel};
                 let mut canvas = Canvas::new(Vector2I::new(font_width, font_height), *FORMAT);
                 let cell_char: char = cell.contents().parse().expect("Invalid char in cell");
-                let glyph_id = FONT
-                    .with(|f| f.glyph_for_char(cell_char))
-                    .expect("Could not find glyph for char");
+
+                // TODO: We currently use `.` as a fallback char, but we should use a better one and maybe pick a
+                // font that supports all the characters used in the TUI-rs demo.
+                let glyph_id = FONT.with(|f| {
+                    f.glyph_for_char(cell_char)
+                        .unwrap_or_else(|| f.glyph_for_char('.').expect("TODO"))
+                });
 
                 FONT.with(|f| {
                     f.rasterize_glyph(
                         &mut canvas,
                         glyph_id,
                         font_size as f32,
-                        Transform2F::from_translation(-raster_rect.origin().to_f32()) * font_transform,
+                        Transform2F::from_translation(-raster_rect.origin().to_f32())
+                            * font_transform,
                         *HINTING_OPTS,
                         *RASTER_OPTS,
                     )
@@ -149,7 +155,8 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
                             background_color.g,
                             background_color.b,
                             255,
-                        ]).into_format();
+                        ])
+                        .into_format();
                         let fg: LinSrgba<f32> = LinSrgba::from_raw(&[r, g, b, alpha]).into_format();
                         let out: [u8; 4] = fg.over(bg).into_format().into_raw();
                         subimg[(x as usize, y as usize)] = RGBA8::new(out[0], out[1], out[2], 255);

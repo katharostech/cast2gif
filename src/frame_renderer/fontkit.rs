@@ -115,7 +115,9 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
             if cell.has_contents() {
                 use palette::{Blend, LinSrgba, Pixel};
                 let mut canvas = Canvas::new(Vector2I::new(font_width, font_height), *FORMAT);
-                let cell_char: char = cell.contents().parse().expect("Invalid char in cell");
+                let contents = cell.contents();
+                if contents == "" { break; }
+                let cell_char: char = contents.parse().expect("Could not parse char");
 
                 // TODO: We currently use `.` as a fallback char, but we should use a better one and maybe pick a
                 // font that supports all the characters used in the TUI-rs demo.

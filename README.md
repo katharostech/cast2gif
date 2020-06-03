@@ -28,7 +28,7 @@ Here are some features to get in as time permits, ordered by importance:
 
 ## Building and Running
 
-To build you must have Rust installed. You can install it with [Rustup](https://rustup.rs/). Then Run
+To build you must have at least Rust 1.42+ installed. You can install it with [Rustup](https://rustup.rs/). Then Run
 
     cargo build --release
 

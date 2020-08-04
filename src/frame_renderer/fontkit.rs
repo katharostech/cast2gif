@@ -101,22 +101,36 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
                 font_height as usize,
             );
 
-            // Fill background color
-            let background_color;
-            if let Some((r, g, b)) = parse_color(cell.bgcolor()) {
-                background_color = RGBA8::new(r, g, b, 255);
-                for pixel in subimg.pixels_mut() {
-                    *pixel = background_color;
-                }
+            let cell_bg_color = parse_color(cell.bgcolor())
+                .map(|x| RGBA::new(x.0, x.1, x.2, 255))
+                .unwrap_or(DEFAULT_BG_COLOR);
+            let cell_fg_color = parse_color(cell.fgcolor())
+                .map(|x| RGBA::new(x.0, x.1, x.2, 255))
+                .unwrap_or(RGBA::new(255, 255, 255, 255));
+
+            let real_bg_color;
+            let real_fg_color;
+            if frame.screen.cursor_position() == (row, col) {
+                real_fg_color = cell_bg_color;
+                real_bg_color = cell_fg_color;
             } else {
-                background_color = DEFAULT_BG_COLOR;
+                real_bg_color = cell_bg_color;
+                real_fg_color = cell_fg_color;
+            }
+
+            if real_bg_color != DEFAULT_BG_COLOR {
+                for pixel in subimg.pixels_mut() {
+                    *pixel = real_bg_color;
+                }
             }
 
             if cell.has_contents() {
                 use palette::{Blend, LinSrgba, Pixel};
                 let mut canvas = Canvas::new(Vector2I::new(font_width, font_height), *FORMAT);
                 let contents = cell.contents();
-                if contents == "" { break; }
+                if contents == "" {
+                    break;
+                }
                 let cell_char: char = contents.parse().expect("Could not parse char");
 
                 // TODO: We currently use `.` as a fallback char, but we should use a better one and maybe pick a
@@ -139,12 +153,6 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
                 })
                 .expect("TODO");
 
-                let (r, g, b) = if let Some((r, g, b)) = parse_color(cell.fgcolor()) {
-                    (r, g, b)
-                } else {
-                    (255, 255, 255)
-                };
-
                 // Alpha `a` over `b`: component wize: a + b * (255 - alpha)
                 for y in 0..font_height {
                     let (row_start, row_end) =
@@ -153,13 +161,19 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
                     for x in 0..font_width {
                         let alpha = row[x as usize];
                         let bg: LinSrgba<f32> = LinSrgba::from_raw(&[
-                            background_color.r,
-                            background_color.g,
-                            background_color.b,
+                            real_bg_color.r,
+                            real_bg_color.g,
+                            real_bg_color.b,
                             255,
                         ])
                         .into_format();
-                        let fg: LinSrgba<f32> = LinSrgba::from_raw(&[r, g, b, alpha]).into_format();
+                        let fg: LinSrgba<f32> = LinSrgba::from_raw(&[
+                            real_fg_color.r,
+                            real_fg_color.g,
+                            real_fg_color.b,
+                            alpha,
+                        ])
+                        .into_format();
                         let out: [u8; 4] = fg.over(bg).into_format().into_raw();
                         subimg[(x as usize, y as usize)] = RGBA8::new(out[0], out[1], out[2], 255);
                     }

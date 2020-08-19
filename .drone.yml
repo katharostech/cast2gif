@@ -1,0 +1,120 @@
+---
+kind: pipeline
+name: linux-build
+
+steps:
+  - name: build
+    image: clux/muslrust:1.46.0-stable
+    commands:
+      - apt update
+      - apt-get install -y cmake libfreetype6-dev libexpat1-dev expat
+      - cargo build --release
+      - mkdir -p build
+      - mv target/x86_64-unknown-linux-musl/release/cast2gif build
+      - cd build/
+      - tar -czf cast2gif-linux-x86_64.tgz lucky
+
+  # Publish release to GitHub releases
+  - name: publish-release
+    image: plugins/github-release
+    depends_on:
+      - build
+    settings:
+      api_key:
+        from_secret: github_access_key
+      files:
+        - build/cast2gif-linux-x86_64.tgz
+    when:
+      ref:
+        - refs/tags/v*
+
+trigger:
+  branch:
+    exclude:
+      - feature/*
+
+---
+kind: pipeline
+name: windows-build
+
+steps:
+  - name: build
+    image: rust:1.46.0
+    commands:
+      - apt-get update
+      - apt-get install -y cmake gcc-mingw-w64-x86-64 zip
+      - rustup target install x86_64-pc-windows-gnu
+      # Patch Some MingW Libs. See https://github.com/rust-lang/rust/issues/47048#issuecomment-474118132
+      - cp -f /usr/x86_64-w64-mingw32/lib/dllcrt2.o /usr/local/rustup/toolchains/1.46.0-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-pc-windows-gnu/lib/dllcrt2.o
+      - cp -f /usr/x86_64-w64-mingw32/lib/crt2.o /usr/local/rustup/toolchains/1.46.0-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-pc-windows-gnu/lib/crt2.o
+      - mkdir -p .cargo
+      - |
+        echo '[target.x86_64-pc-windows-gnu]
+        linker = "x86_64-w64-mingw32-gcc"' >> .cargo/config
+      - cargo build --target x86_64-pc-windows-gnu --release
+      - mkdir -p build
+      - mv target/x86_64-pc-windows-gnu/release/cast2gif.exe build
+      - cd build/
+      - zip -r cast2gif-windows-x86_64.zip cast2gif.exe
+
+  # Publish release to GitHub releases
+  - name: publish-release
+    image: plugins/github-release
+    depends_on:
+      - build
+    settings:
+      api_key:
+        from_secret: github_access_key
+      files:
+        - build/cast2gif-windows-x86_64.zip
+    when:
+      ref:
+        - refs/tags/v*
+
+trigger:
+  branch:
+    exclude:
+      - feature/*
+
+---
+kind: pipeline
+name: macos-build
+
+steps:
+  - name: build
+    image: katharostech/rust-osxcross:rust-latest_v0.1.0
+    commands:
+      - PATH="$PATH:/build/osxcross/target/bin"
+      # Configure build to use Mac linker and libraries
+      - mkdir -p /drone/src/.cargo
+      - |
+        echo '[target.x86_64-apple-darwin]
+        linker = "x86_64-apple-darwin15-clang"' >> /drone/src/.cargo/config
+      - cd /drone/src
+      - export COREAUDIO_FRAMEWORKS_PATH='/System/Library/Frameworks'
+      - export CC=x86_64-apple-darwin15-clang
+      - cargo build --target x86_64-apple-darwin --release
+      - mkdir -p build
+      - mv target/x86_64-apple-darwin/release/cast2gif build
+      - cd build/
+      - tar -czf cast2gif-mac-x86_64.tgz lucky
+      - sha256sum cast2gif-mac-x86_64.tgz | awk -F ' ' '{print $1}' > sha256.txt
+
+  # Publish release to GitHub releases
+  - name: publish-release
+    image: plugins/github-release
+    depends_on:
+      - build
+    settings:
+      api_key:
+        from_secret: github_access_key
+      files:
+        - build/cast2gif-mac-x86_64.tgz
+    when:
+      ref:
+        - refs/tags/v*
+
+trigger:
+  branch:
+    exclude:
+      - feature/*

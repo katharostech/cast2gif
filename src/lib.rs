@@ -1,8 +1,13 @@
+use gif::SetParameter;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
+use rgb::ComponentBytes;
 use std::io::{Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::{
+    convert::TryInto,
+    sync::atomic::{AtomicBool, Ordering::SeqCst},
+};
 
 #[macro_use]
 pub(crate) mod macros;
@@ -23,8 +28,32 @@ pub enum Error {
     Generic(String),
     #[error("Asciinema error: {0}")]
     AsciinemaError(#[from] AsciinemaError),
-    #[error("Gif error: {0}")]
-    GifError(#[from] gifski::Error),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("Image error: {0}")]
+    ImageError(#[from] ImageError),
+}
+
+/// An error with the image
+#[derive(Error, Debug)]
+pub enum ImageError {
+    #[error("Invalid image {0}, could not convert to unsigned 32-bit integer: {1}")]
+    InvalidDimension(ImageDimension, usize),
+}
+
+#[derive(Debug)]
+pub enum ImageDimension {
+    Width,
+    Height,
+}
+
+impl std::fmt::Display for ImageDimension {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ImageDimension::Width => write!(f, "width"),
+            ImageDimension::Height => write!(f, "height"),
+        }
+    }
 }
 
 lazy_static! {
@@ -100,21 +129,136 @@ fn png_raster_thread<Fi>(
     }
 }
 
-fn gif_sequencer_thread(
-    frame_receiver: flume::Receiver<RgbaFrame>,
-    mut gif_collector: gifski::Collector,
-) {
-    for frame in frame_receiver {
-        // Add frame to gif
-        gif_collector
-            // TODO: avoid `as`
-            .add_frame_rgba(
-                frame.index as usize,
-                frame.image,
-                (frame.time * 0.01) as f64,
-            )
-            .expect("TODO");
+/// An iterator over an iterator of frames that makes sure the frames come in the right order
+struct OrderedFrameIter<I: Iterator<Item = RgbaFrame>> {
+    buffer: Vec<RgbaFrame>,
+    frames: I,
+    current_frame: u64,
+}
+
+impl<I: Iterator<Item = RgbaFrame>> OrderedFrameIter<I> {
+    fn new(frame_iter: I) -> Self {
+        Self {
+            buffer: Vec::new(),
+            frames: frame_iter,
+            current_frame: 0,
+        }
     }
+}
+
+impl<I: Iterator<Item = RgbaFrame>> std::iter::Iterator for OrderedFrameIter<I> {
+    type Item = RgbaFrame;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // See if any of the frames in the buffer are the next frame
+        let mut next_frame_buffer_index = None;
+        for (index, frame) in self.buffer.iter().enumerate() {
+            // If this frame is the next frame in the list
+            if frame.index == self.current_frame {
+                // Record its inex
+                next_frame_buffer_index = Some(index);
+                // And exit the loop
+                break;
+            }
+        }
+
+        // Grab the next frame out of the buffer if one was found
+        let next_frame = next_frame_buffer_index.map(|i| self.buffer.remove(i));
+
+        // If we have found a frame in the buffer
+        let ret = if let Some(frame) = next_frame {
+            // Return the frame
+            Some(frame)
+
+        // If we don't have a buffered frame
+        } else {
+            // Loop through the next frames until we find the next one
+            loop {
+                if let Some(frame) = self.frames.next() {
+                    // If this is the next frame
+                    if frame.index == self.current_frame {
+                        // Return it
+                        break Some(frame);
+                    } else {
+                        // Push it to the buffer
+                        self.buffer.push(frame);
+                    }
+                } else {
+                    break None;
+                }
+            }
+        };
+
+        self.current_frame += 1;
+        ret
+    }
+}
+
+fn sequence_gif<W: Write>(
+    frame_receiver: flume::Receiver<RgbaFrame>,
+    progress_sender: flume::Sender<ProgressCmd>,
+    file_writer: W,
+) -> Result<(), Error> {
+    // Get the first frame so we have a reference for the image height and width
+    let first_frame = frame_receiver
+        .recv()
+        .expect("TODO: Got a gif with no frames?");
+
+    // Get width and height for the image
+    let width = first_frame.image.width();
+    let height = first_frame.image.height();
+
+    let try_to_u16 = |x: usize, dim| {
+        x.try_into()
+            .map_err(|_| ImageError::InvalidDimension(dim, x))
+    };
+
+    use ImageDimension::{Height, Width};
+
+    // Create the gif encoder
+    let mut encoder = gif::Encoder::new(
+        file_writer,
+        try_to_u16(width, Width)?,
+        try_to_u16(height, Height)?,
+        &[],
+    )?;
+
+    encoder.set(gif::Repeat::Infinite)?;
+
+
+    // Loop through the frames
+    let mut last_frame_time = 0f32;
+    for frame in OrderedFrameIter::new(std::iter::once(first_frame).chain(frame_receiver)) {
+        // Send sequence progress
+        progress_sender
+            .send(ProgressCmd::IncrementSequenceProgress)
+            .ok();
+
+        let (mut data, width, height) = frame.image.into_contiguous_buf();
+        let pixels = data.as_bytes_mut();
+
+        let mut gif_frame = gif::Frame::from_rgba_speed(
+            try_to_u16(width, Width)?,
+            try_to_u16(height, Height)?,
+            pixels,
+            30,
+        );
+
+        let dt = frame.time - last_frame_time;
+
+        // if dt < 1. {
+        //     continue;
+        // }
+
+        gif_frame.delay = (dt / 10.).round() as u16;
+
+        last_frame_time = frame.time;
+
+        // Add frame to gif
+        encoder.write_frame(&gif_frame)?;
+    }
+
+    Ok(())
 }
 
 /// Convert a asciinema cast file to a gif image
@@ -148,53 +292,13 @@ where
     let ps = progress_sender.clone();
     rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender));
 
-    // Create gifski gif encoder
-    let (collector, gif_writer) = gifski::new(gifski::Settings {
-        width: None,
-        height: None,
-        quality: 100,
-        once: false,
-        fast: false,
-    })
-    .expect("TODO");
-
-    // Spawn the gif sequencer thread
-    // NOTE: Even though we are handing the rasterized images to the gif collector
-    // in a separate thread, the gif *writer* seems to write sequentially. Also because
-    // Our frame index doesn't start at zero ( kind of a bug? ) it waits until all of the
-    // frames have been set before sequencing. In practice this is not actually an issue
-    // because we pretty much saturate the CPU while rasterizing anyway and it isn't faster
-    // to try to sequence at the same time anyway.
-    rayon::spawn(move || gif_sequencer_thread(raster_receiver, collector));
-
-    // Write out the recieved gif
+    // Buffered writer
     let buf = std::io::BufWriter::new(writer);
-    let mut progress_handler = GifWriterProgressHandler::new(progress_sender);
-    gif_writer.write(buf, &mut progress_handler).expect("TODO");
+
+    // Start sequencing the gif
+    sequence_gif(raster_receiver, progress_sender, buf)?;
 
     Ok(())
-}
-
-struct GifWriterProgressHandler {
-    progress_sender: flume::Sender<ProgressCmd>,
-}
-
-impl GifWriterProgressHandler {
-    fn new(progress_sender: flume::Sender<ProgressCmd>) -> Self {
-        Self { progress_sender }
-    }
-}
-
-impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
-    fn increase(&mut self) -> bool {
-        self.progress_sender
-            .send(ProgressCmd::IncrementSequenceProgress)
-            .expect("TODO");
-
-        true
-    }
-
-    fn done(&mut self, _msg: &str) {}
 }
 
 pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>

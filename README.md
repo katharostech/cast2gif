@@ -1,6 +1,6 @@
 # Cast2Gif
 
-A tool to convert [Asciinema](https://github.com/asciinema/asciinema) cast file to Gif, animated PNG, or SVG files *without* using Electron or a web browser. The discussion on how this project started on a [forum topic](https://users.rust-lang.org/t/writing-an-asciinema-to-gif-tool/39450/15?u=zicklag) on the Rust forum.
+A tool to convert [Asciinema](https://github.com/asciinema/asciinema) cast files to Gifs *without* using Electron or a web browser.
 
 ## Installing
 
@@ -57,3 +57,7 @@ Run `cast2gif --help` to get the usage instructions:
     ARGS:
         <cast_file>    The asciinema .cast file to render
         <out_file>     The file to render to
+        
+## History
+
+This project started after a [discussion](https://users.rust-lang.org/t/writing-an-asciinema-to-gif-tool/39450/15?u=zicklag) on the Rust forum.

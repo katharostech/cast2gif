@@ -47,12 +47,16 @@ Run `cast2gif --help` to get the usage instructions:
     Renders Asciinema .cast files as gif, svg, or animated png.
 
     USAGE:
-        cast2gif [FLAGS] <cast_file> <out_file>
+        cast2gif [FLAGS] [OPTIONS] <cast_file> <out_file>
 
     FLAGS:
         -f, --force      Overwrite existing output file
         -h, --help       Prints help information
         -V, --version    Prints version information
+
+    OPTIONS:
+        -c, --crop <crop>    crop the recording while rendering. Specify crop in terminal cells as
+                            `top=[int],left=[int],width=[int],height=[int]`.
 
     ARGS:
         <cast_file>    The asciinema .cast file to render

@@ -1,3 +1,4 @@
+use cli::CropSettings;
 use lazy_static::lazy_static;
 use thiserror::Error;
 
@@ -76,6 +77,7 @@ fn png_raster_thread<Fi>(
     frames: Fi,
     progress_sender: flume::Sender<ProgressCmd>,
     frame_sender: flume::Sender<RgbaFrame>,
+    crop: Option<CropSettings>,
 ) where
     Fi: IntoIterator<Item = Result<TerminalFrame, AsciinemaError>>,
 {
@@ -93,7 +95,7 @@ fn png_raster_thread<Fi>(
         let fs = frame_sender.clone();
         let ps = progress_sender.clone();
         rayon::spawn(move || {
-            let frame = frame_renderer::render_frame_to_png(frame);
+            let frame = frame_renderer::render_frame_to_png(frame, crop);
             fs.send(frame).expect("TODO");
             ps.send(ProgressCmd::IncrementRasterProgress).expect("TODO");
         });
@@ -125,6 +127,7 @@ pub fn convert_to_gif_with_progress<R, W, C>(
     reader: R,
     writer: W,
     update_progress: C,
+    crop: Option<CropSettings>,
 ) -> Result<(), Error>
 where
     R: Read + Send + 'static,
@@ -146,7 +149,7 @@ where
 
     // Spawn the png rasterizer thread
     let ps = progress_sender.clone();
-    rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender));
+    rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender, crop));
 
     // Create gifski gif encoder
     let (collector, gif_writer) = gifski::new(gifski::Settings {
@@ -197,10 +200,10 @@ impl gifski::progress::ProgressReporter for GifWriterProgressHandler {
     fn done(&mut self, _msg: &str) {}
 }
 
-pub fn convert_to_gif<R, W>(reader: R, writer: W) -> Result<(), Error>
+pub fn convert_to_gif<R, W>(reader: R, writer: W, crop: Option<CropSettings>) -> Result<(), Error>
 where
     R: Read + Send + 'static,
     W: Write + Send,
 {
-    convert_to_gif_with_progress(reader, writer, NullProgressHandler)
+    convert_to_gif_with_progress(reader, writer, NullProgressHandler, crop)
 }

@@ -37,11 +37,20 @@ pub fn run() {
     .expect("Panic while handling panic");
 }
 
+#[derive(Debug)]
 enum OutputFormat {
     Gif,
     // TODO: Other image formats
     // Png,
     // Svg,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CropSettings {
+    pub top: u16,
+    pub left: u16,
+    pub width: u16,
+    pub height: u16,
 }
 
 fn execute_cli() -> anyhow::Result<()> {
@@ -60,6 +69,13 @@ fn execute_cli() -> anyhow::Result<()> {
         .arg(Arg::with_name("out_file")
             .help("The file to render to")
             .required(true))
+        .arg(Arg::with_name("crop")
+            .long("crop")
+            .short("c")
+            .help("crop the recording while rendering. \
+                   Specify crop in terminal cells as \
+                   `top=[int],left=[int],width=[int],height=[int]`.")
+            .takes_value(true))
         // TODO: Implement other file formats
         // .arg(Arg::with_name("format")
         //     .long("format")
@@ -137,6 +153,45 @@ fn execute_cli() -> anyhow::Result<()> {
     //     Some("png") => OutputFormat::Png,
     //     Some(other) => panic!("Invalid option to --format: {}", other),
     // };
+    let crop = {
+        let mut top = None;
+        let mut left = None;
+        let mut width = None;
+        let mut height = None;
+
+        if let Some(crop_str) = args.value_of("crop") {
+            for pair in crop_str.split(",") {
+                let split: Vec<_> = pair.split("=").collect();
+                let key = split.get(0);
+                let value = split.get(1);
+
+                if let Some(value) = value {
+                    let value: u16 = value.parse().context("Could not parse crop value as int")?;
+
+                    if let Some(&key) = key {
+                        match key {
+                            "top" => top = Some(value),
+                            "left" => left = Some(value),
+                            "width" => width = Some(value),
+                            "height" => height = Some(value),
+                            _ => continue,
+                        }
+                    }
+                }
+            }
+        };
+
+        if top.is_none() || left.is_none() || width.is_none() || height.is_none() {
+            None
+        } else {
+            Some(CropSettings {
+                top: top.unwrap(),
+                left: left.unwrap(),
+                width: width.unwrap(),
+                height: height.unwrap(),
+            })
+        }
+    };
 
     // Create the progress bars
     let multi = MultiProgress::new();
@@ -158,6 +213,7 @@ fn execute_cli() -> anyhow::Result<()> {
                     cast_file,
                     &out_file,
                     progress_handler,
+                    crop
                 )
                 .expect("TODO");
             });

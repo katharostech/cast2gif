@@ -18,7 +18,7 @@ use std::iter::FromIterator;
 use std::sync::Arc;
 
 use super::parse_color;
-use crate::types::*;
+use crate::{cli::CropSettings, types::*};
 
 lazy_static! {
     static ref FONT_DATA: Arc<Vec<u8>> = Arc::new(Vec::from_iter(
@@ -34,7 +34,7 @@ thread_local! {
     static FONT: Font = Font::from_bytes(FONT_DATA.clone(), 0).expect("Could not load font");
 }
 
-pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
+pub(crate) fn render_frame_to_png(frame: TerminalFrame, crop: Option<CropSettings>) -> RgbaFrame {
     flame!(guard "Render Frame To PNG");
 
     flame!(start "Init Values");
@@ -42,6 +42,11 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     let (rows, cols) = frame.screen.size();
     // TODO: Configurable background color
     const DEFAULT_BG_COLOR: RGBA8 = RGBA::new(0, 0, 0, 255);
+
+    let crop_rows = crop.map(|x| x.height).unwrap_or(rows);
+    let crop_cols = crop.map(|x| x.width).unwrap_or(cols);
+    let crop_top = crop.map(|x| x.top).unwrap_or(0);
+    let crop_left = crop.map(|x| x.left).unwrap_or(0);
 
     // Glyph rendering config
     lazy_static! {
@@ -73,8 +78,8 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     let font_transform =
         Transform2F::from_translation(Vector2F::new(0., -font_height_offset as f32));
 
-    let height = (rows as i32 * font_height) as usize;
-    let width = (cols as i32 * font_width) as usize;
+    let height = (crop_rows as i32 * font_height) as usize;
+    let width = (crop_cols as i32 * font_width) as usize;
 
     // Image to render to
     let pixel_count = width * height;
@@ -89,11 +94,11 @@ pub(crate) fn render_frame_to_png(frame: TerminalFrame) -> RgbaFrame {
     flame!(end "Init Values");
 
     flame!(start "Render Cells");
-    for row in 0..rows {
-        for col in 0..cols {
+    for (row_i, row) in (crop_top..(crop_top + crop_rows)).enumerate() {
+        for (col_i, col) in (crop_left..(crop_left + crop_cols)).enumerate() {
             let cell = frame.screen.cell(row, col).expect("Error indexing cell");
-            let ypos = row as i32 * font_height;
-            let xpos = col as i32 * font_width;
+            let ypos = row_i as i32 * font_height;
+            let xpos = col_i as i32 * font_width;
             let mut subimg = image.sub_image_mut(
                 xpos as usize,
                 ypos as usize,

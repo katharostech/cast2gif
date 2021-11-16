@@ -3,6 +3,7 @@ use lazy_static::lazy_static;
 use thiserror::Error;
 
 use std::io::{Read, Write};
+use std::sync::{Arc, Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
 
 #[macro_use]
@@ -58,16 +59,35 @@ fn configure_thread_pool() {
 fn progress_thread<C: CastProgressHandler>(
     progress_reciever: flume::Receiver<ProgressCmd>,
     mut progress_handler: C,
+    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>
 ) {
+    macro_rules! update_sequencing_is_behind {
+        ($value:expr) => {
+            let (lock, cvar) = &*sequencing_is_behind;
+            let mut sib = lock.lock().unwrap();
+            *sib = $value;
+            cvar.notify_all();
+        };
+    }
     // Setup initial progress
     let mut progress = CastRenderProgress::default();
 
     // Handle incomming commands
     for cmd in progress_reciever {
         match cmd {
-            ProgressCmd::IncrementCount => progress.count += 1,
+            ProgressCmd::IncrementCount => {
+                progress.count += 1;
+                if progress.count - progress.sequence_progress >= 100 {
+                    update_sequencing_is_behind!(true);
+                }
+            },
             ProgressCmd::IncrementRasterProgress => progress.raster_progress += 1,
-            ProgressCmd::IncrementSequenceProgress => progress.sequence_progress += 1,
+            ProgressCmd::IncrementSequenceProgress => {
+                progress.sequence_progress += 1;
+                if progress.count - progress.sequence_progress < 100 {
+                    update_sequencing_is_behind!(false);
+                }
+            },
         }
         progress_handler.update_progress(&progress);
     }
@@ -78,6 +98,7 @@ fn png_raster_thread<Fi>(
     progress_sender: flume::Sender<ProgressCmd>,
     frame_sender: flume::Sender<RgbaFrame>,
     crop: Option<CropSettings>,
+    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>
 ) where
     Fi: IntoIterator<Item = Result<TerminalFrame, AsciinemaError>>,
 {
@@ -85,6 +106,13 @@ fn png_raster_thread<Fi>(
     for frame in frames {
         // Unwrap frame result
         let frame = frame.expect("TODO");
+
+        let (lock, cvar) = &*sequencing_is_behind;
+        let mut sib = lock.lock().unwrap();
+        while *sib {
+            // Wait until sequencing catches up
+            sib = cvar.wait(sib).unwrap();
+        }
 
         // Increment frame count
         progress_sender
@@ -137,9 +165,15 @@ where
     // Configure the rayon thread pool
     configure_thread_pool();
 
+    // Because sequencing tends to take time, we should throttle rasterizing for it to catch up to prevent excessive memory usage
+    // Progress thread dictates when this throttling occurs since, obviously, it knows the progress
+    let sequencing_is_behind = Arc::new((Mutex::new(false), Condvar::new()));
+
     // Create the progress thread and channel
     let (progress_sender, progress_receiver) = flume::unbounded();
-    rayon::spawn(move || progress_thread(progress_receiver, update_progress));
+
+    let sib = sequencing_is_behind.clone();
+    rayon::spawn(move || progress_thread(progress_receiver, update_progress, sib));
 
     // Create channel for getting rendered frames
     let (raster_sender, raster_receiver) = flume::unbounded();
@@ -149,7 +183,8 @@ where
 
     // Spawn the png rasterizer thread
     let ps = progress_sender.clone();
-    rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender, crop));
+    let sib = sequencing_is_behind.clone();
+    rayon::spawn(move || png_raster_thread(term_frames, ps, raster_sender, crop, sib));
 
     // Create gifski gif encoder
     let (collector, gif_writer) = gifski::new(gifski::Settings {

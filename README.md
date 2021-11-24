@@ -65,3 +65,8 @@ Run `cast2gif --help` to get the usage instructions:
 ## History
 
 This project started after a [discussion](https://users.rust-lang.org/t/writing-an-asciinema-to-gif-tool/39450/15?u=zicklag) on the Rust forum.
+
+## Alternatives
+
+- [cast2gif](https://github.com/foubian/cast2gif) by @foubian
+    - A more polished alternative that runs in a web browser and has options for font-size and theme

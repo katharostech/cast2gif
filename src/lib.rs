@@ -3,8 +3,8 @@ use lazy_static::lazy_static;
 use thiserror::Error;
 
 use std::io::{Read, Write};
-use std::sync::{Arc, Condvar, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::sync::{Arc, Condvar, Mutex};
 
 #[macro_use]
 pub(crate) mod macros;
@@ -59,7 +59,7 @@ fn configure_thread_pool() {
 fn progress_thread<C: CastProgressHandler>(
     progress_reciever: flume::Receiver<ProgressCmd>,
     mut progress_handler: C,
-    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>
+    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>,
 ) {
     macro_rules! update_sequencing_is_behind {
         ($value:expr) => {
@@ -80,14 +80,14 @@ fn progress_thread<C: CastProgressHandler>(
                 if progress.count - progress.sequence_progress >= 100 {
                     update_sequencing_is_behind!(true);
                 }
-            },
+            }
             ProgressCmd::IncrementRasterProgress => progress.raster_progress += 1,
             ProgressCmd::IncrementSequenceProgress => {
                 progress.sequence_progress += 1;
                 if progress.count - progress.sequence_progress < 100 {
                     update_sequencing_is_behind!(false);
                 }
-            },
+            }
         }
         progress_handler.update_progress(&progress);
     }
@@ -98,7 +98,7 @@ fn png_raster_thread<Fi>(
     progress_sender: flume::Sender<ProgressCmd>,
     frame_sender: flume::Sender<RgbaFrame>,
     crop: Option<CropSettings>,
-    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>
+    sequencing_is_behind: Arc<(Mutex<bool>, Condvar)>,
 ) where
     Fi: IntoIterator<Item = Result<TerminalFrame, AsciinemaError>>,
 {
@@ -191,7 +191,7 @@ where
         width: None,
         height: None,
         quality: 100,
-        once: false,
+        repeat: gifski::Repeat::Infinite,
         fast: false,
     })
     .expect("TODO");
